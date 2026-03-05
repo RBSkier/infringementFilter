@@ -18,10 +18,10 @@ def fast_remove(exclude_list, original):
     return re.compile("|".join(escaped)).sub("", original).strip()
 
 # 配置参数（根据实际需求修改）
-excel_path = "C:/Users/jylau/Desktop/脚本/产品翻译数据.xlsx"  # 你的Excel文件路径
+excel_path = "./产品翻译数据.xlsx"  # 你的Excel文件路径
 sheet_name = "产品数据"  # 目标工作表名
-start_row = 2  # 从第x行开始读取（Excel行号）
-end_row = 959
+start_row = 109  # 从第x行开始读取（Excel行号）
+end_row = 1384
 
 try:
     # 加载工作簿
@@ -38,16 +38,18 @@ try:
 
         prompt = f"""完成任务：
                     1. 规则：从待处理文本中提取需要剔除的内容，剔除范围：
-                        ①产品自身的品牌信息（但描述产品适用于什么品牌或者型号的信息无需剔除）；
-                        ②带有mercadolibre.com域名的链接的引流信息；
-                        ③保修天数、质保期限相关描述；
-                        ④发货时效、物流配送相关描述（购物车相关、包邮政策、咨询投诉处理的描述无需剔除）；
-                        ⑤前后缀上的一些无含义乱码；
+                        ①从标题文本中剔除小品牌名称，但知名品牌或者ip无需剔除；
+                        ②从标题文本中剔除前后缀上的一些无含义乱码；
+                        ③从描述文本中剔除小品牌名称、保修天数、质保期限相关描述；
+                        ④从描述文本中剔除发货时效、full仓发货描述（美客多平台的包邮政策、售后相关无需剔除）；
+                        ⑤从描述文本中剔除带有mercadolibre.com域名的链接的引流信息；
                     2. 处理对象：同时分析【标题文本】和【描述文本】，分别提取各自需要剔除的内容。
+                    3. 原标题中剔除掉第1点的内容后，重新生成一个最多60个字母的标题，要求与剔除后的标题有差异化，避免被平台收录为跟卖链接。
                     3. 输出要求：仅返回标准JSON字典，无其他多余文字，字典格式如下：
                         {{
                             "title_exclude": [标题中需剔除的内容1, 标题中需剔除的内容2,...],
-                            "description_exclude": [描述中需剔除的内容1, 描述中需剔除的内容2,...]
+                            "description_exclude": [描述中需剔除的内容1, 描述中需剔除的内容2,...],
+                            "new_title": "剔除内容新生成的标题"
                         }}
                     若某一文本无需要剔除的内容，对应列表为空数组[]。
                     4. 待处理文本：
@@ -72,6 +74,7 @@ try:
         # 将豆包返回的剔除项转成列表类型
         title_exclude = []  # 标题剔除列表默认空
         description_exclude = []  # 描述剔除列表默认空
+        new_title = ""  # 新标题默认空
         try:
             # 前置校验：过滤空和全空白字符串
             if response_text.strip():
@@ -80,6 +83,7 @@ try:
                 # 提取对应列表（键不存在则赋空列表）
                 title_exclude = exclude_dict.get("title_exclude", [])
                 description_exclude = exclude_dict.get("description_exclude", [])
+                new_title = exclude_dict.get("new_title", "")
         except json.JSONDecodeError as e:
             print(f"❌ JSON解析失败：{e}，使用空列表兜底")
             print(f"豆包实际返回内容：{response_text}")
@@ -88,18 +92,15 @@ try:
             print(f"❌ 其他错误：{e}，使用空列表兜底")
             sys.exit(2)  # 终止程序，退出码2表示其他未知异常
 
-        # 核心修改：仅当有需要剔除的内容时，才处理并回写Excel
-        if title_exclude or description_exclude:
-             # 根据剔除项处理文本
-            clean_title = fast_remove(title_exclude, original_title)
-            clean_description = fast_remove(description_exclude, original_desc)
-            # 将记录回写excel的D、E、F、G列
-            row[3].value = str(title_exclude)   # D列：title_exclude
-            row[4].value = str(description_exclude) # E列：description_exclude
-            row[5].value = clean_title  # F列：clean_title
-            row[6].value = clean_description    # G列：clean_description
-            row[7].value = completion.choices[0].message.reasoning_content    # H列：思考过程
-            row[8].value = len(str(clean_description))  # I列：description_exclude字符串长度
+        # 根据剔除项处理文本
+        # clean_title = fast_remove(title_exclude, original_title)
+        clean_description = fast_remove(description_exclude, original_desc)
+        # 将记录回写excel的D、E、F、G列
+        row[3].value = str(title_exclude)   # D列：title_exclude
+        row[4].value = str(description_exclude) # E列：description_exclude
+        row[5].value = new_title  # F列：new_title
+        row[6].value = clean_description    # G列：clean_description
+        row[7].value = completion.choices[0].message.reasoning_content    # H列：思考过程
 
         # 🔴 核心修改：每处理一行立即保存，防止数据丢失
         try:
